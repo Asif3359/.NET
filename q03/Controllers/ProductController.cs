@@ -1,8 +1,6 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using q03.Models;
@@ -32,26 +30,35 @@ namespace q03.Controllers
         public async Task<ActionResult<Product>> GetProduct(long id)
         {
             var product = await _context.Products.FindAsync(id);
-
-            if (product == null)
-            {
-                return NotFound();
-            }
-
+            if (product == null) return NotFound();
             return product;
         }
 
-        // PUT: api/Product/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutProduct(long id, Product product)
+        // POST: api/Product
+        [HttpPost]
+        public async Task<ActionResult<Product>> PostProduct(ProductDto dto)
         {
-            if (id != product.Id)
+            var product = new Product
             {
-                return BadRequest();
-            }
+                Name = dto.Name,
+                Price = dto.Price
+            };
 
-            _context.Entry(product).State = EntityState.Modified;
+            _context.Products.Add(product);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
+        }
+
+        // PUT: api/Product/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutProduct(long id, ProductDto dto)
+        {
+            var product = await _context.Products.FindAsync(id);
+            if (product == null) return NotFound();
+
+            product.Name = dto.Name;
+            product.Price = dto.Price;
 
             try
             {
@@ -59,28 +66,11 @@ namespace q03.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!ProductExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                if (!ProductExists(id)) return NotFound();
+                throw;
             }
 
             return NoContent();
-        }
-
-        // POST: api/Product
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<Product>> PostProduct(Product product)
-        {
-            _context.Products.Add(product);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetProduct", new { id = product.Id }, product);
         }
 
         // DELETE: api/Product/5
@@ -88,10 +78,7 @@ namespace q03.Controllers
         public async Task<IActionResult> DeleteProduct(long id)
         {
             var product = await _context.Products.FindAsync(id);
-            if (product == null)
-            {
-                return NotFound();
-            }
+            if (product == null) return NotFound();
 
             _context.Products.Remove(product);
             await _context.SaveChangesAsync();

@@ -10,8 +10,8 @@ using q03.Models;
 namespace q03.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260108093224_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260108101242_AddRelations")]
+    partial class AddRelations
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -32,6 +32,10 @@ namespace q03.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Orders");
                 });
@@ -74,6 +78,35 @@ namespace q03.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("q03.Models.Order", b =>
+                {
+                    b.HasOne("q03.Models.Product", "Product")
+                        .WithMany("Orders")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("q03.Models.User", "User")
+                        .WithMany("Orders")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("q03.Models.Product", b =>
+                {
+                    b.Navigation("Orders");
+                });
+
+            modelBuilder.Entity("q03.Models.User", b =>
+                {
+                    b.Navigation("Orders");
                 });
 #pragma warning restore 612, 618
         }

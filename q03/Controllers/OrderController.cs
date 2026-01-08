@@ -20,26 +20,49 @@ namespace q03.Controllers
             _context = context;
         }
 
-        // GET: api/Order
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Order>>> GetOrders()
+        public async Task<ActionResult<IEnumerable<OrderResponseDto>>> GetOrders()
         {
-            return await _context.Orders.ToListAsync();
+            var orders = await _context.Orders
+                .Include(o => o.User)
+                .Include(o => o.Product)
+                .Select(o => new OrderResponseDto
+                {
+                    Id = o.Id,
+                    UserId = o.UserId,
+                    UserEmail = o.User.Email,
+                    ProductId = o.ProductId,
+                    ProductName = o.Product.Name,
+                    ProductPrice = o.Product.Price
+                })
+                .ToListAsync();
+
+            return orders;
         }
 
-        // GET: api/Order/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Order>> GetOrder(long id)
+        public async Task<ActionResult<OrderResponseDto>> GetOrder(long id)
         {
-            var order = await _context.Orders.FindAsync(id);
+            var order = await _context.Orders
+                .Include(o => o.User)
+                .Include(o => o.Product)
+                .Where(o => o.Id == id)
+                .Select(o => new OrderResponseDto
+                {
+                    Id = o.Id,
+                    UserId = o.UserId,
+                    UserEmail = o.User.Email,
+                    ProductId = o.ProductId,
+                    ProductName = o.Product.Name,
+                    ProductPrice = o.Product.Price
+                })
+                .FirstOrDefaultAsync();
 
-            if (order == null)
-            {
-                return NotFound();
-            }
-
+            if (order == null) return NotFound();
             return order;
         }
+
+
 
         // PUT: api/Order/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
@@ -75,27 +98,18 @@ namespace q03.Controllers
         // POST: api/Order
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Order>> PostOrder(Order order)
+        public async Task<ActionResult<Order>> PostOrder(OrderDto dto)
         {
-            // Check if the user exists
-            var user = await _context.Users.FindAsync(order.UserId);
-            if (user == null)
+            var order = new Order
             {
-                return NotFound(new { message = "User not found" });
-            }
+                UserId = dto.UserId,
+                ProductId = dto.ProductId
+            };
 
-            // Check if the product exists
-            var product = await _context.Products.FindAsync(order.ProductId);
-            if (product == null)
-            {
-                return NotFound(new { message = "Product not found" });
-            }
-
-            // Add the order
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction("GetOrder", new { id = order.Id }, order);
+            return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
         }
 
         // DELETE: api/Order/5

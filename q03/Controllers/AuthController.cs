@@ -39,10 +39,16 @@ namespace q03.Controllers
         }
 
         [HttpPost("Signup")]
-        public async Task<ActionResult<User>> Signup(User user)
+        public async Task<ActionResult> Signup(UserSignupDto dto)
         {
-            if (_context.Users.Any(u => u.Email == user.Email))
+            if (_context.Users.Any(u => u.Email == dto.Email))
                 return BadRequest("User already exists");
+
+            var user = new User
+            {
+                Email = dto.Email,
+                Password = dto.Password
+            };
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
@@ -56,10 +62,10 @@ namespace q03.Controllers
         }
 
         [HttpPost("Login")]
-        public async Task<ActionResult<User>> Login(User user)
+        public async Task<ActionResult> Login(UserSignupDto dto)
         {
             var existingUser = _context.Users
-                .FirstOrDefault(u => u.Email == user.Email && u.Password == user.Password);
+                .FirstOrDefault(u => u.Email == dto.Email && u.Password == dto.Password);
 
             if (existingUser == null)
                 return Unauthorized("Invalid credentials");
@@ -67,7 +73,7 @@ namespace q03.Controllers
             return Ok(new
             {
                 id = existingUser.Id,
-                email = user.Email,
+                email = existingUser.Email,
                 message = "Login successful"
             });
         }
