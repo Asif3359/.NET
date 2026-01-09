@@ -10,12 +10,19 @@ namespace EcomApi.Models
     public class Order
     {
         public long Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-
+        public string OrderNumber { get; set; } = GenerateOrderNumber();
+        public DateTime OrderDate { get; set; } = DateTime.UtcNow;
+        public string Status { get; set; } = "Pending";
+        public string ShippingAddress {get; set;} = string.Empty;
         public long UserId { get; set; }
         public User User { get; set; } = null!;
 
         public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+
+        private static string GenerateOrderNumber()
+        {
+            return $"ORD-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+        }
     }
 
 }

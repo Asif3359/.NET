@@ -14,6 +14,8 @@ namespace EcomApi.Models
         public Product Product { get; set; } = null!;
 
         public int Quantity { get; set; }
+        public double UnitPrice { get; set; } // Add this - snapshot of price at time of order
+
     }
 
 }
