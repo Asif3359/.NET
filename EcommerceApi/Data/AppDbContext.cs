@@ -3,18 +3,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using EcomApi.Models;
-using EcomApi.Enums;
+using EcommerceApi.Models;
+using EcommerceApi.Enums;
+using System.Security.Cryptography;
+using System.Runtime.Serialization;
+using System.Linq.Expressions;
+using System.Reflection.Metadata;
+using System.Reflection.Emit;
 
 
-namespace EcomApi.Data
+namespace EcommerceApi.Data
 {
     public class AppDbContext : DbContext
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options)
-            : base(options)
-        {
-        }
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
 
         public DbSet<User> Users { get; set; }
         public DbSet<Category> Categories { get; set; }
@@ -22,28 +25,26 @@ namespace EcomApi.Data
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
 
-            // 🔹 Composite key for OrderItem (Many-to-Many)
-            modelBuilder.Entity<OrderItem>()
+        protected override void OnModelCreating(ModelBuilder builder)
+        {
+            base.OnModelCreating(builder);
+
+            builder.Entity<OrderItem>()
                 .HasKey(oi => new { oi.OrderId, oi.ProductId });
 
-            // 🔹 Order ↔ OrderItem
-            modelBuilder.Entity<OrderItem>()
+            builder.Entity<OrderItem>()
                 .HasOne(oi => oi.Order)
                 .WithMany(o => o.OrderItems)
                 .HasForeignKey(oi => oi.OrderId);
 
-            // 🔹 Product ↔ OrderItem
-            modelBuilder.Entity<OrderItem>()
+            builder.Entity<OrderItem>()
                 .HasOne(oi => oi.Product)
                 .WithMany(p => p.OrderItems)
                 .HasForeignKey(oi => oi.ProductId);
 
-            // 🔹 Default value for UserRole enum
-            modelBuilder.Entity<User>()
+
+            builder.Entity<User>()
                 .Property(u => u.Role)
                 .HasDefaultValue(UserRole.User);
         }
