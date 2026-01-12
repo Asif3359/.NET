@@ -194,12 +194,65 @@ namespace EcommerceApi.Controllers
 
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<Product>> DeleteTModelById(long id)
+        public async Task<ActionResult> DeleteTModelById(long id)
         {
-            var product = await _context.Products.FindAsync(id);
 
-            return null;
+            var product = await _context.Products
+                .Include(p => p.OrderItems)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (product == null)
+            {
+                return NotFound(new
+                {
+                    message = "Product Not Found"
+                });
+            }
+
+            if (product.OrderItems.Any())
+            {
+                return BadRequest(new
+                {
+                    message = "Cannot delete product with exist order"
+                });
+            }
+
+            _context.Products.Remove(product);
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
+
+        [HttpGet("category/{categoryId}")]
+        [AllowAnonymous]
+        public async Task<ActionResult<IEnumerable<ProductResponseDto>>> GetProductByCateory(long categoryId)
+        {
+            var categoryExist = await _context.Categories.FindAsync(categoryId);
+
+            if (categoryExist == null)
+            {
+                return NotFound(new
+                {
+                    message = "Category not found"
+                });
+            }
+
+            var products = await _context.Products
+                .Include(p => p.Category)
+                .Where(p => p.CategoryId == categoryId)
+                .Select(p => new ProductResponseDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Price = p.Price,
+                    Description = p.Description,
+                    CategoryId = p.CategoryId,
+                    CategoryName = p.Category != null ? p.Category.Name : null
+                }).ToListAsync();
+
+
+            return Ok(products);
+        }
+
 
         private bool ProductExists(long id)
         {
