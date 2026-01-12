@@ -19,3 +19,5 @@
 # Visual Studio cache/options directory
 .vs/
 
+
+.fake
