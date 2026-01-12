@@ -138,22 +138,73 @@ namespace EcommerceApi.Controllers
             return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, productDto);
         }
 
-        // [HttpPut("{id}")]
-        // public async Task<IActionResult> PutProduct(long id, Product model)
-        // {
-        //     // TODO: Your code here
-        //     await Task.Yield();
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> PutProduct(long id, [FromBody] ProductDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-        //     return NoContent();
-        // }
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+            {
+                return NotFound(new { message = "Product not Found" });
+            }
 
-        // [HttpDelete("{id}")]
-        // public async Task<ActionResult<Product>> DeleteProductById(long id)
-        // {
-        //     // TODO: Your code here
-        //     await Task.Yield();
+            var duplicateProduct = await _context.Products
+                .FirstOrDefaultAsync(p =>
+                p.Id != id && p.Name.ToLower() == dto.Name.ToLower());
 
-        //     return null;
-        // }
+
+            if (duplicateProduct != null)
+            {
+                return BadRequest(new { message = "Another product with same name exist" });
+            }
+
+            var category = await _context.Categories.FindAsync(dto.CategoryId);
+
+            if (category == null)
+            {
+                return BadRequest(new { message = "Category does not exist" });
+            }
+
+            product.Name = dto.Name;
+            product.Price = dto.Price;
+            product.Description = dto.Description;
+            product.CategoryId = dto.CategoryId;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+
+                if (!ProductExists(id))
+                {
+                    return NotFound(new { message = "Product not found during update" });
+                }
+                throw;
+            }
+
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<Product>> DeleteTModelById(long id)
+        {
+            var product = await _context.Products.FindAsync(id);
+
+            return null;
+        }
+
+        private bool ProductExists(long id)
+        {
+            return _context.Products.Any(e => e.Id == id);
+        }
+
     }
 }
