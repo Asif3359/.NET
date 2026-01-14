@@ -16,7 +16,7 @@ namespace EcommerceApi.DTOs
         public double TotalAmount { get; set; }
         public string ShippingAddress { get; set; } = string.Empty;
         public UserInfoDto User { get; set; } = new UserInfoDto();
-        public List<OrderResponseDto> Items { get; set; } = new List<OrderResponseDto>();
+        public List<OrderItemResponseDto> Items { get; set; } = new List<OrderItemResponseDto>();
 
     }
 }
