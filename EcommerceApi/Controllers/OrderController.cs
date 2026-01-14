@@ -34,7 +34,7 @@ namespace EcommerceApi.Controllers
             var query = _context.Orders
                 .Include(o => o.User)
                 .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
+                    .ThenInclude(oi => oi.Product)
                 .AsQueryable();
 
             if (!isAdmin)
@@ -77,7 +77,7 @@ namespace EcommerceApi.Controllers
             var order = await _context.Orders
                 .Include(o => o.User)
                 .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
+                    .ThenInclude(oi => oi.Product)
                 .FirstOrDefaultAsync(o => o.Id == id);
 
             if (order == null)
@@ -194,7 +194,7 @@ namespace EcommerceApi.Controllers
             var createdOrder = await _context.Orders
                 .Include(o => o.User)
                 .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.Product)
+                    .ThenInclude(oi => oi.Product)
                 .FirstOrDefaultAsync(o => o.Id == order.Id);
 
             if (createdOrder == null)
