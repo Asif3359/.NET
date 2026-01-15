@@ -1,37 +1,54 @@
-using Microsoft.AspNetCore.Authentication.Cookies;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using System.Runtime.InteropServices;
-using EcommerceApi.Models;
+using Microsoft.IdentityModel.Tokens;
 using EcommerceApi.Data;
+using EcommerceApi.Helpers;
+using EcommerceApi.Interfaces;
+using EcommerceApi.Repositories;
+using EcommerceApi.Services;
+using EcommerceApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-// dotnet add package Microsoft.EntityFrameworkCore.InMemory
-// using Microsoft.EntityFrameworkCore;
+
+// Database Configuration
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
 );
 
+// JWT Configuration
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+builder.Services.Configure<JwtSettings>(jwtSettings);
 
+var jwtSecret = jwtSettings.Get<JwtSettings>()?.Secret ?? throw new Exception("JWT Secret not configured");
+var key = Encoding.ASCII.GetBytes(jwtSecret);
 
-// using Microsoft.AspNetCore.Authentication.Cookies;
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+// Authentication with JWT
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false; // Set to true in production
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        // using Microsoft.AspNetCore.Http;
-        options.Cookie.Name = "EcomAuth";
-        options.LoginPath = "/api/auth/login";
-        options.LogoutPath = "/api/auth/logout";
-        options.AccessDeniedPath = "/api/auth/access-denied";
-        options.ExpireTimeSpan = TimeSpan.FromDays(7); // Cookie expires in 7 days
-        options.SlidingExpiration = true; // Renew cookie on activity
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings.Get<JwtSettings>()?.Issuer,
+        ValidateAudience = true,
+        ValidAudience = jwtSettings.Get<JwtSettings>()?.Audience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
 
-        // https://docs.microsoft.com/en-us/aspnet/core/security/authentication/cookie?view=aspnetcore-3.1#react-to-back-end-changes                    
-        // options.EventsType = typeof(CustomCookieAuthenticationEvents);
-    });
-
-
+// Authorization Policies
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy =>
@@ -41,25 +58,69 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole("User"));
 });
 
+// CORS Configuration
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// Register Unit of Work
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+// Register Services
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+
+// Add HttpContextAccessor
 builder.Services.AddHttpContextAccessor();
+
+// Add Controllers
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+
+// Swagger/OpenAPI Configuration
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApiDocument(config =>
 {
     config.DocumentName = "Ecommerce";
-    config.Title = "Ecommerce v1";
+    config.Title = "Ecommerce API v1";
     config.Version = "v1";
+    config.Description = "A professional ecommerce API with clean architecture";
+    
+    // Add JWT authentication to Swagger
+    config.AddSecurity("JWT", Enumerable.Empty<string>(), new NSwag.OpenApiSecurityScheme
+    {
+        Type = NSwag.OpenApiSecuritySchemeType.ApiKey,
+        Name = "Authorization",
+        In = NSwag.OpenApiSecurityApiKeyLocation.Header,
+        Description = "Type into the textbox: Bearer {your JWT token}."
+    });
 });
 
+// Logging Configuration
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+
+// Global Exception Handler (Must be first)
+app.UseMiddleware<ExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseOpenApi();
     app.UseSwaggerUi(config =>
     {
-        config.DocumentTitle = "EcommerceAPI";
+        config.DocumentTitle = "Ecommerce API Documentation";
         config.Path = "/swagger";
         config.DocumentPath = "/swagger/{documentName}/swagger.json";
         config.DocExpansion = "list";
@@ -67,8 +128,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseAuthentication(); // Must be before Authorization
+
+// CORS
+app.UseCors("AllowAll");
+
+// Authentication & Authorization (Order matters!)
+app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();

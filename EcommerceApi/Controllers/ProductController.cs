@@ -1,20 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data.Common;
-using System.Diagnostics;
-using System.Linq;
-using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-using EcommerceApi.Data;
-using EcommerceApi.DTOs;
-using EcommerceApi.Enums;
-using EcommerceApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.VisualBasic;
+using EcommerceApi.DTOs;
+using EcommerceApi.Helpers;
+using EcommerceApi.Interfaces;
 
 namespace EcommerceApi.Controllers
 {
@@ -23,241 +11,113 @@ namespace EcommerceApi.Controllers
     [Authorize]
     public class ProductController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IProductService _productService;
+        private readonly ILogger<ProductController> _logger;
 
-        public ProductController(AppDbContext context)
+        public ProductController(IProductService productService, ILogger<ProductController> logger)
         {
-            _context = context;
+            _productService = productService;
+            _logger = logger;
         }
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<ProductResponseDto>>> GetProducts()
+        public async Task<ActionResult> GetProducts()
         {
-            var products = await _context
-                .Products.Include(p => p.Category)
-                .Where(p => p.Price > 0)
-                .OrderBy(p => p.Name)
-                .Select(p => new ProductResponseDto
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Price = p.Price,
-                    Description = p.Description,
-                    CategoryId = p.CategoryId,
-                    CategoryName = p.Category != null ? p.Category.Name : null,
-                })
-                .ToListAsync();
-
-            return Ok(products);
+            var products = await _productService.GetAllProductsAsync();
+            return Ok(ApiResponse<IEnumerable<ProductResponseDto>>.SuccessResponse(products, "Products retrieved successfully"));
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<ProductResponseDto>> GetProductById(long id)
+        [AllowAnonymous]
+        public async Task<ActionResult> GetProductById(long id)
         {
-            var product = await _context.Products
-                 .Include(p => p.Category)
-                 .FirstOrDefaultAsync(p => p.Id == id);
+            var product = await _productService.GetProductByIdAsync(id);
 
             if (product == null)
             {
-                return NotFound(new { message = "Product not found" });
+                return NotFound(ApiResponse.FailureResponse("Product not found"));
             }
 
-            var productDto = new ProductResponseDto
-            {
-                Id = product.Id,
-                Name = product.Name,
-                Price = product.Price,
-                Description = product.Description,
-                CategoryId = product.CategoryId,
-                CategoryName = product.Category?.Name
-
-            };
-
-            return Ok(productDto);
-        }
-
-        [HttpPost]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<ProductDto>> PostProduct([FromBody] ProductDto dto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var existingProduct = await _context.Products.FirstOrDefaultAsync(p =>
-                p.Name.ToLower() == dto.Name.ToLower()
-            );
-
-            if (existingProduct != null)
-            {
-                return BadRequest(new { message = "Product with same name is exist" });
-            }
-
-            var category = await _context.Categories.FindAsync(dto.CategoryId);
-
-            if (category == null)
-            {
-                return BadRequest(new { message = "Category doesnot exist" });
-            }
-
-            var product = new Product
-            {
-                Name = dto.Name,
-                Price = dto.Price,
-                Description = dto.Description,
-                CategoryId = dto.CategoryId,
-            };
-
-            _context.Products.Add(product);
-            await _context.SaveChangesAsync();
-
-            var createdProduct = await _context.Products
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync(p => p.Id == product.Id);
-
-            if (createdProduct == null)
-            {
-                return NotFound(new { message = "Product not Created" });
-            }
-
-
-            var productDto = new ProductResponseDto
-            {
-                Id = createdProduct.Id,
-                Name = createdProduct.Name,
-                Price = createdProduct.Price,
-                Description = createdProduct.Description,
-                CategoryId = createdProduct.CategoryId,
-                CategoryName = createdProduct.Category?.Name
-
-            };
-
-            return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, productDto);
-        }
-
-        [HttpPut("{id}")]
-        [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> PutProduct(long id, [FromBody] ProductDto dto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var product = await _context.Products.FindAsync(id);
-            if (product == null)
-            {
-                return NotFound(new { message = "Product not Found" });
-            }
-
-            var duplicateProduct = await _context.Products
-                .FirstOrDefaultAsync(p =>
-                p.Id != id && p.Name.ToLower() == dto.Name.ToLower());
-
-
-            if (duplicateProduct != null)
-            {
-                return BadRequest(new { message = "Another product with same name exist" });
-            }
-
-            var category = await _context.Categories.FindAsync(dto.CategoryId);
-
-            if (category == null)
-            {
-                return BadRequest(new { message = "Category does not exist" });
-            }
-
-            product.Name = dto.Name;
-            product.Price = dto.Price;
-            product.Description = dto.Description;
-            product.CategoryId = dto.CategoryId;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-
-                if (!ProductExists(id))
-                {
-                    return NotFound(new { message = "Product not found during update" });
-                }
-                throw;
-            }
-
-            return NoContent();
-        }
-
-        [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult> DeleteTModelById(long id)
-        {
-
-            var product = await _context.Products
-                .Include(p => p.OrderItems)
-                .FirstOrDefaultAsync(p => p.Id == id);
-
-            if (product == null)
-            {
-                return NotFound(new
-                {
-                    message = "Product Not Found"
-                });
-            }
-
-            if (product.OrderItems.Any())
-            {
-                return BadRequest(new
-                {
-                    message = "Cannot delete product with exist order"
-                });
-            }
-
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
-            return NoContent();
+            return Ok(ApiResponse<ProductResponseDto>.SuccessResponse(product, "Product retrieved successfully"));
         }
 
         [HttpGet("category/{categoryId}")]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<ProductResponseDto>>> GetProductByCateory(long categoryId)
+        public async Task<ActionResult> GetProductsByCategory(long categoryId)
         {
-            var categoryExist = await _context.Categories.FindAsync(categoryId);
+            var products = await _productService.GetProductsByCategoryAsync(categoryId);
 
-            if (categoryExist == null)
+            if (!products.Any())
             {
-                return NotFound(new
-                {
-                    message = "Category not found"
-                });
+                return NotFound(ApiResponse.FailureResponse("No products found for this category or category does not exist"));
             }
 
-            var products = await _context.Products
-                .Include(p => p.Category)
-                .Where(p => p.CategoryId == categoryId)
-                .Select(p => new ProductResponseDto
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Price = p.Price,
-                    Description = p.Description,
-                    CategoryId = p.CategoryId,
-                    CategoryName = p.Category != null ? p.Category.Name : null
-                }).ToListAsync();
-
-
-            return Ok(products);
+            return Ok(ApiResponse<IEnumerable<ProductResponseDto>>.SuccessResponse(products, "Products retrieved successfully"));
         }
 
-
-        private bool ProductExists(long id)
+        [HttpPost]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult> PostProduct([FromBody] ProductDto dto)
         {
-            return _context.Products.Any(e => e.Id == id);
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
+            }
+
+            var (success, message, product) = await _productService.CreateProductAsync(dto);
+
+            if (!success)
+            {
+                return BadRequest(ApiResponse.FailureResponse(message));
+            }
+
+            return CreatedAtAction(
+                nameof(GetProductById), 
+                new { id = product!.Id }, 
+                ApiResponse<ProductResponseDto>.SuccessResponse(product, message)
+            );
         }
 
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult> PutProduct(long id, [FromBody] ProductDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
+            }
+
+            var (success, message) = await _productService.UpdateProductAsync(id, dto);
+
+            if (!success)
+            {
+                return NotFound(ApiResponse.FailureResponse(message));
+            }
+
+            return Ok(ApiResponse.SuccessResponse(message));
+        }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult> DeleteProduct(long id)
+        {
+            var (success, message) = await _productService.DeleteProductAsync(id);
+
+            if (!success)
+            {
+                return NotFound(ApiResponse.FailureResponse(message));
+            }
+
+            return Ok(ApiResponse.SuccessResponse(message));
+        }
     }
 }

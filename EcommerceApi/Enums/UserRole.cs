@@ -4,6 +4,6 @@ namespace EcommerceApi.Enums
     {
         User = 0,
         Admin = 1,
-        Modarator = 2
+        Moderator = 2
     }
 }

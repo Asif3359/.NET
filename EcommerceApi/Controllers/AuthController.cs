@@ -1,23 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.VisualBasic;
-using BCrypt.Net;
-using System.Reflection.Metadata;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using EcommerceApi.Models;
-using EcommerceApi.Data;
 using EcommerceApi.DTOs;
 using EcommerceApi.Enums;
-using System.Net;
+using EcommerceApi.Helpers;
+using EcommerceApi.Interfaces;
 
 namespace EcommerceApi.Controllers
 {
@@ -25,204 +12,160 @@ namespace EcommerceApi.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly AppDbContext _context;
-        public AuthController(AppDbContext context)
+        private readonly IAuthService _authService;
+        private readonly ILogger<AuthController> _logger;
+
+        public AuthController(IAuthService authService, ILogger<AuthController> logger)
         {
-            _context = context;
+            _authService = authService;
+            _logger = logger;
         }
 
         [HttpGet]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+        public async Task<ActionResult> GetUsers()
         {
-            return await _context.Users.ToListAsync();
+            var users = await _authService.GetAllUsersAsync();
+            
+            var userDtos = users.Select(u => new UserInfoDto
+            {
+                Id = u.Id,
+                Name = u.Name,
+                Email = u.Email,
+                Role = u.Role.ToString()
+            });
+
+            return Ok(ApiResponse<IEnumerable<UserInfoDto>>.SuccessResponse(userDtos, "Users retrieved successfully"));
         }
 
         [HttpGet("me")]
         [Authorize]
         public async Task<ActionResult> GetCurrentUser()
         {
-
             var userId = GetCurrentUserId();
-            var user = await _context.Users.FindAsync(userId);
-
+            var user = await _authService.GetUserByIdAsync(userId);
 
             if (user == null)
             {
-                return Unauthorized();
+                return Unauthorized(ApiResponse.FailureResponse("User not found"));
             }
 
-            return Ok(
-                new
-                {
-                    Id = user.Id,
-                    Name = user.Name,
-                    Email = user.Email,
-                    Role = user.Role.ToString()
-                }
-            );
+            var userInfo = new UserInfoDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                Role = user.Role.ToString()
+            };
+
+            return Ok(ApiResponse<UserInfoDto>.SuccessResponse(userInfo, "User retrieved successfully"));
         }
 
         [HttpGet("{id}")]
         [Authorize]
-        public async Task<ActionResult<User>> GetUser(long id)
+        public async Task<ActionResult> GetUser(long id)
         {
             var currentUserId = GetCurrentUserId();
-            var currentUser = await _context.Users.FindAsync(currentUserId);
+            var currentUser = await _authService.GetUserByIdAsync(currentUserId);
 
             if (currentUser?.Role != UserRole.Admin && currentUserId != id)
             {
                 return Forbid();
             }
 
-            var user = await _context.Users.FindAsync(id);
+            var user = await _authService.GetUserByIdAsync(id);
             if (user == null)
             {
-                return NotFound();
+                return NotFound(ApiResponse.FailureResponse("User not found"));
             }
 
-            return Ok(
-                new
-                {
-                    Id = user.Id,
-                    Name = user.Name,
-                    Email = user.Email,
-                    Role = user.Role
-                }
-            );
-
-        }
-
-        [HttpPost("Signup")]
-        public async Task<ActionResult> Signup([FromBody] SignupDto dto)
-        {
-
-            if (_context.Users.Any(u => u.Email == dto.Email))
+            var userInfo = new UserInfoDto
             {
-                return BadRequest("User already exist");
-            }
-
-            var user = new User
-            {
-                Name = dto.Name,
-                Email = dto.Email,
-                Password = HashPassword(dto.Password),
-                Role = UserRole.User
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                Role = user.Role.ToString()
             };
 
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
-
-            await SignInUser(user);
-
-
-            return Ok(
-                new
-                {
-                    Id = user.Id,
-                    Email = user.Email,
-                    Name = user.Name,
-                    Role = user.Role.ToString(),
-                    Message = "Signup successful"
-                }
-            );
-
+            return Ok(ApiResponse<UserInfoDto>.SuccessResponse(userInfo, "User retrieved successfully"));
         }
 
-        [HttpPost("Login")]
-        public async Task<ActionResult> Login([FromBody] LoginDto dto)
+        [HttpPost("signup")]
+        public async Task<ActionResult> Signup([FromBody] SignupDto dto)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
-            if (user == null || !VerifyPassword(dto.Password, user.Password))
+            if (!ModelState.IsValid)
             {
-                return Unauthorized("Invalid email or password");
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
             }
 
-            await SignInUser(user);
+            var (success, message, user, token) = await _authService.SignupAsync(dto);
 
-            return Ok(
-                new
-                {
-                    Id = user.Id,
-                    Email = user.Email,
-                    Name = user.Name,
-                    Role = user.Role.ToString(),
-                    Message = "Login successful"
-                }
-            );
+            if (!success)
+            {
+                return BadRequest(ApiResponse.FailureResponse(message));
+            }
+
+            var response = new
+            {
+                User = user,
+                Token = token
+            };
+
+            return Ok(ApiResponse<object>.SuccessResponse(response, message));
         }
 
-        [HttpPost("Logout")]
-        [Authorize]
-        public async Task<ActionResult> Logout()
+        [HttpPost("login")]
+        public async Task<ActionResult> Login([FromBody] LoginDto dto)
         {
-            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            return Ok(new { Message = "Logged out successfully" });
-        }
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
+            }
 
+            var (success, message, user, token) = await _authService.LoginAsync(dto);
+
+            if (!success)
+            {
+                return Unauthorized(ApiResponse.FailureResponse(message));
+            }
+
+            var response = new
+            {
+                User = user,
+                Token = token
+            };
+
+            return Ok(ApiResponse<object>.SuccessResponse(response, message));
+        }
 
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
         public async Task<ActionResult> DeleteUser(long id)
         {
-            var user = await _context.Users.FindAsync(id);
-            if (user == null)
+            var currentUserId = GetCurrentUserId();
+            
+            var success = await _authService.DeleteUserAsync(id, currentUserId);
+
+            if (!success)
             {
-                return NotFound();
+                return BadRequest(ApiResponse.FailureResponse("Cannot delete user. Either user not found or you're trying to delete your own account."));
             }
-            if (user.Id == GetCurrentUserId())
-            {
-                return BadRequest("Cannot delete your own account");
-            }
 
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-
-        private async Task SignInUser(User user)
-        {
-            var claims = new List<Claim>
-            {
-              new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-              new Claim(ClaimTypes.Email , user.Email),
-              new Claim(ClaimTypes.Name , user.Name),
-              new Claim(ClaimTypes.Role , user.Role.ToString())
-            };
-
-            var claimsIdentity = new ClaimsIdentity(
-                claims, CookieAuthenticationDefaults.AuthenticationScheme
-            );
-
-            var authProperties = new AuthenticationProperties
-            {
-                IsPersistent = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
-
-            };
-
-
-            await HttpContext.SignInAsync(
-               CookieAuthenticationDefaults.AuthenticationScheme,
-               new ClaimsPrincipal(claimsIdentity),
-               authProperties);
+            return Ok(ApiResponse.SuccessResponse("User deleted successfully"));
         }
 
         private long GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return long.TryParse(userIdClaim, out var userId) ? userId : 0;
-        }
-        private string HashPassword(string password)
-        {
-            return BCrypt.Net.BCrypt.HashPassword(password);
-        }
-
-        private bool VerifyPassword(string password, string hashedPassword)
-        {
-            return BCrypt.Net.BCrypt.Verify(password, hashedPassword);
         }
     }
 }

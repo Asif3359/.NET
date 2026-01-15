@@ -15,9 +15,11 @@ namespace EcommerceApi.Models
         public long UserId { get; set; }
         public User User { get; set; } = null!;
         public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+        
         private static string GenerateOrderNumber()
         {
-            return $"ORD-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+            // Use Guid for thread-safe unique order numbers
+            return $"ORD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 8).ToUpper()}";
         }
     }
 

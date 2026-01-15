@@ -1,19 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.VisualBasic;
-using System.Reflection.Metadata;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using EcommerceApi.Models;
-using EcommerceApi.Data;
-using EcommerceApi.Enums;
 using EcommerceApi.DTOs;
-using System.Data.Common;
+using EcommerceApi.Helpers;
+using EcommerceApi.Interfaces;
 
 namespace EcommerceApi.Controllers
 {
@@ -22,160 +11,99 @@ namespace EcommerceApi.Controllers
     [Authorize]
     public class CategoryController : ControllerBase
     {
-        private readonly AppDbContext _context;
-        public CategoryController(AppDbContext context)
+        private readonly ICategoryService _categoryService;
+        private readonly ILogger<CategoryController> _logger;
+
+        public CategoryController(ICategoryService categoryService, ILogger<CategoryController> logger)
         {
-            _context = context;
+            _categoryService = categoryService;
+            _logger = logger;
         }
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<CategoryResponseDto>>> GetCategorys()
+        public async Task<ActionResult> GetCategories()
         {
-            var categories = await _context.Categories
-                .Select(c => new CategoryResponseDto
-                {
-                    Id = c.Id,
-                    Name = c.Name,
-                    ProductCount = c.Products.Count
-
-                }).ToListAsync();
-
-            return Ok(categories);
+            var categories = await _categoryService.GetAllCategoriesAsync();
+            return Ok(ApiResponse<IEnumerable<CategoryResponseDto>>.SuccessResponse(categories, "Categories retrieved successfully"));
         }
 
         [HttpGet("{id}")]
         [AllowAnonymous]
-        public async Task<ActionResult<CategoryDetailDto>> GetCategory(long id)
+        public async Task<ActionResult> GetCategory(long id)
         {
-            var category = await _context.Categories
-                .Include(c => c.Products)
-                .FirstOrDefaultAsync(c => c.Id == id);
+            var category = await _categoryService.GetCategoryByIdAsync(id);
+
             if (category == null)
             {
-                return NotFound(
-                    new
-                    {
-                        message = "Category not Found"
-                    }
-                );
+                return NotFound(ApiResponse.FailureResponse("Category not found"));
             }
 
-            var categoryDto = new CategoryDetailDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Products = category.Products.Select(p => new ProductResponseDto
-                {
-                    Id = p.Id,
-                    Name = p.Name,
-                    Price = p.Price,
-                    Description = p.Description
-                }).ToList()
-            };
-
-            return Ok(categoryDto);
+            return Ok(ApiResponse<CategoryDetailDto>.SuccessResponse(category, "Category retrieved successfully"));
         }
 
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<CategoryResponseDto>> PostCategory([FromBody] CategoryDto dto)
+        public async Task<ActionResult> PostCategory([FromBody] CategoryDto dto)
         {
-            if (await _context.Categories.AnyAsync(c => c.Name.ToLower() == dto.Name.ToLower()))
+            if (!ModelState.IsValid)
             {
-                return BadRequest(new
-                {
-                    message = "With this name category Already exists"
-                });
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
             }
 
-            var category = new Category
+            var (success, message, category) = await _categoryService.CreateCategoryAsync(dto);
+
+            if (!success)
             {
-                Name = dto.Name
-            };
+                return BadRequest(ApiResponse.FailureResponse(message));
+            }
 
-            _context.Categories.Add(category);
-            await _context.SaveChangesAsync();
-
-            var responseDto = new CategoryResponseDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                ProductCount = 0
-            };
-
-            return CreatedAtAction(nameof(GetCategory), new
-            {
-                id = category.Id
-            }, responseDto);
-
-
+            return CreatedAtAction(
+                nameof(GetCategory), 
+                new { id = category!.Id }, 
+                ApiResponse<CategoryResponseDto>.SuccessResponse(category, message)
+            );
         }
 
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> PutCategory(long id, [FromBody] CategoryDto dto)
+        public async Task<ActionResult> PutCategory(long id, [FromBody] CategoryDto dto)
         {
-            var category = await _context.Categories.FindAsync(id);
-            if (category == null)
+            if (!ModelState.IsValid)
             {
-                return NotFound(new { message = "Category not found" });
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest(ApiResponse.FailureResponse("Validation failed", errors));
             }
 
-            if (await _context.Categories.AnyAsync(c =>
-                c.Id != id && c.Name.ToLower() == dto.Name.ToLower()))
+            var (success, message) = await _categoryService.UpdateCategoryAsync(id, dto);
+
+            if (!success)
             {
-                return BadRequest(new { message = "Another category with this name already exists" });
+                return NotFound(ApiResponse.FailureResponse(message));
             }
 
-            category.Name = dto.Name;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!CategoryExists(id))
-                    return NotFound(new { message = "Category not found" });
-                throw;
-            }
-
-            return NoContent();
+            return Ok(ApiResponse.SuccessResponse(message));
         }
 
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
         public async Task<ActionResult> DeleteCategory(long id)
         {
-            var category = await _context.Categories
-                .Include(c => c.Products)
-                .FirstOrDefaultAsync(c => c.Id == id);
+            var (success, message) = await _categoryService.DeleteCategoryAsync(id);
 
-            if (category == null)
+            if (!success)
             {
-                return NotFound(new { message = "Category not found" });
+                return BadRequest(ApiResponse.FailureResponse(message));
             }
 
-            if (category.Products.Any())
-            {
-                return BadRequest(new
-                {
-                    message = "Cannot delete category with products. Remove products first."
-                });
-            }
-
-
-            _context.Categories.Remove(category);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-
-        private bool CategoryExists(long id)
-        {
-            return _context.Categories.Any(e => e.Id == id);
+            return Ok(ApiResponse.SuccessResponse(message));
         }
     }
 }

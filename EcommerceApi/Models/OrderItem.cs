@@ -14,6 +14,6 @@ namespace EcommerceApi.Models
         public Product Product { get; set; } = null!;
 
         public int Quantity { get; set; }
-        public double UnitPrice { get; set; }
+        public double Price { get; set; }
     }
 }
