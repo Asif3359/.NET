@@ -18,5 +18,9 @@ namespace BlogApi.Models
 
         public long AuthorId { get; set; }
         public User Author { get; set; } = null!;
+
+        public ICollection<Comment> Comments { get; set; } = new List<Comment>();
+        public ICollection<PostTag> PostTags { get; set; } = new List<PostTag>();
+
     }
 }

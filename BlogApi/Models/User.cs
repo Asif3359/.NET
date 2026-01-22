@@ -10,9 +10,13 @@ namespace BlogApi.Models
     {
         public long Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public string Email { get; set;} = string.Empty;
+        public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public UserRole Role { get; set; } = UserRole.User;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public ICollection<Post> Posts { get; set; } = new List<Post>();
+        public ICollection<Comment> Comments { get; set; } = new List<Comment>();
+        
     }
 }

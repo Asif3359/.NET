@@ -13,7 +13,7 @@ namespace BlogApi.Models
 
 
         public long PostId { get; set; }
-        public Post post { get; set; } = null!;
+        public Post Post { get; set; } = null!;
 
         public long UserId { get; set; }
         public User User { get; set; } = null!;
