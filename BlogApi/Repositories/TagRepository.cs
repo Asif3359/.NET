@@ -8,7 +8,7 @@ using BlogApi.Models;
 using BlogApi.Repositories;
 using Microsoft.EntityFrameworkCore;
 
-namespace BlogApi
+namespace BlogApi.Repositories
 {
     public class TagRepository : Repository<Tag>, ITagRepository
     {
